@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EmulatorJS – DS</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+
+    /* Écran de chargement pré-EmulatorJS */
+    #preload {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #09090b; color: #e4e4e7;
+      gap: 1rem; z-index: 10;
+    }
+    #preload.hidden { display: none; }
+
+    #preload h2 { font-size: 1rem; font-weight: 600; color: #a78bfa; }
+    #preload p  { font-size: 0.8rem; color: #71717a; }
+
+    .bar-wrap {
+      width: min(320px, 80vw);
+      height: 6px; background: #27272a; border-radius: 9999px; overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%; background: #7c3aed; border-radius: 9999px;
+      transition: width 0.15s ease; width: 0%;
+    }
+
+    #error-screen {
+      display: none; position: fixed; inset: 0;
+      align-items: center; justify-content: center;
+      background: #09090b; color: #f87171;
+      font-family: monospace; padding: 2rem; text-align: center;
+      flex-direction: column; gap: 0.75rem;
+    }
+    #error-screen.visible { display: flex; }
+
+    #game { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+
+  <!-- Écran affiché pendant le téléchargement des chunks -->
+  <div id="preload">
+    <h2 id="preload-title">Chargement de la ROM…</h2>
+    <div class="bar-wrap"><div class="bar-fill" id="bar"></div></div>
+    <p id="preload-sub">Connexion à Supabase…</p>
+  </div>
+
+  <!-- Écran d'erreur -->
+  <div id="error-screen">
+    <span style="font-size:2rem">⚠</span>
+    <span id="error-msg"></span>
+  </div>
+
+  <div id="game"></div>
+
+  <script>
+    const params      = new URLSearchParams(window.location.search);
+    const romUrl      = params.get('rom');       // URL directe (legacy, chunk_count=1)
+    const saveUrl     = params.get('save');
+    const romId       = params.get('romId');
+    const sbUrl       = params.get('supabase');
+    const chunkCount  = parseInt(params.get('chunks') || '1', 10);
+
+    const preload     = document.getElementById('preload');
+    const bar         = document.getElementById('bar');
+    const preloadSub  = document.getElementById('preload-sub');
+    const preloadTitle= document.getElementById('preload-title');
+    const errorScreen = document.getElementById('error-screen');
+    const errorMsg    = document.getElementById('error-msg');
+
+    function showError(msg) {
+      preload.classList.add('hidden');
+      errorScreen.classList.add('visible');
+      errorMsg.textContent = msg;
+    }
+
+    function setProgress(done, total) {
+      bar.style.width = `${Math.round((done / total) * 100)}%`;
+      preloadSub.textContent = `${done} / ${total} blocs téléchargés`;
+    }
+
+    // ── Téléchargement parallèle avec file d'attente ───────────────
+    async function downloadChunks(count, concurrency = 6) {
+      const urls = Array.from({ length: count }, (_, i) =>
+        `${sbUrl}/storage/v1/object/public/roms/${romId}/chunk_${String(i).padStart(4, '0')}`
+      );
+
+      const results  = new Array(count);
+      let   next     = 0;
+      let   done     = 0;
+
+      async function worker() {
+        while (next < count) {
+          const i = next++;
+          const resp = await fetch(urls[i]);
+          if (!resp.ok) throw new Error(`Bloc ${i} introuvable (${resp.status})`);
+          results[i] = await resp.arrayBuffer();
+          done++;
+          setProgress(done, count);
+        }
+      }
+
+      // Lance N workers en parallèle
+      await Promise.all(Array.from({ length: Math.min(concurrency, count) }, worker));
+      return results;
+    }
+
+    // ── Point d'entrée ─────────────────────────────────────────────
+    async function init() {
+      if (!romUrl && (!romId || !sbUrl)) {
+        showError('Aucune ROM spécifiée.'); return;
+      }
+
+      let gameUrl;
+
+      if (chunkCount <= 1) {
+        // Fichier unique (ancienne méthode)
+        gameUrl = romUrl;
+        preload.classList.add('hidden');
+      } else {
+        // Téléchargement des chunks
+        preloadTitle.textContent = 'Téléchargement de la ROM…';
+        setProgress(0, chunkCount);
+        try {
+          const buffers = await downloadChunks(chunkCount);
+          const blob = new Blob(buffers, { type: 'application/octet-stream' });
+          gameUrl = URL.createObjectURL(blob);
+        } catch (err) {
+          showError('Erreur : ' + err.message); return;
+        }
+        preload.classList.add('hidden');
+      }
+
+      // ── Config EmulatorJS ────────────────────────────────────────
+      let cachedState = null;
+
+      window.EJS_player        = '#game';
+      window.EJS_core          = 'melonds';
+      window.EJS_gameUrl       = gameUrl;
+      window.EJS_pathtodata    = 'https://cdn.emulatorjs.org/stable/data/';
+      window.EJS_startOnLoaded = true;
+      window.EJS_defaultOptions = { 'directBoot': 'enabled' };
+
+      window.EJS_Buttons = {
+        playPause: true, restart: true, mute: true, settings: true,
+        fullscreen: true, saveState: true, loadState: true,
+        screenRecord: false, gamepad: true, cheat: false, volume: true,
+        saveSavFiles: true, loadSavFiles: true,
+      };
+
+      if (saveUrl) window.EJS_saveStateURL = saveUrl;
+
+      window.EJS_onSaveState = function(e) {
+        try {
+          const raw = e.state instanceof Uint8Array ? e.state : new Uint8Array(e.state);
+          cachedState = raw;
+          window.parent.postMessage({
+            type: 'ejs_save_state',
+            state: Array.from(raw),
+            screenshot: e.screenshot || null,
+          }, '*');
+        } catch (err) { console.error('[Emuste] save error:', err); }
+      };
+
+      window.EJS_onLoadState = async function() {
+        if (cachedState) return cachedState;
+        if (!romId || !sbUrl) return null;
+        try {
+          const url  = `${sbUrl}/storage/v1/object/public/saves/${romId}/auto.state?t=${Date.now()}`;
+          const resp = await fetch(url, { cache: 'no-store' });
+          if (!resp.ok) return null;
+          cachedState = new Uint8Array(await resp.arrayBuffer());
+          return cachedState;
+        } catch { return null; }
+      };
+
+      window.addEventListener('message', function(ev) {
+        if (ev.data?.type === 'ejs_force_load' && window.EJS_emulator && ev.data.state) {
+          try { window.EJS_emulator.gameManager.loadState(new Uint8Array(ev.data.state)); }
+          catch (err) { console.error('[Emuste] force_load error:', err); }
+        }
+      });
+
+      const script = document.createElement('script');
+      script.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
+      script.onerror = () => showError('Impossible de charger EmulatorJS. Vérifiez votre connexion.');
+      document.body.appendChild(script);
+    }
+
+    init().catch(err => showError(err.message));
+  </script>
+</body>
+</html>
