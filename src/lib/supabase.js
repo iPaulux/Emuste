@@ -20,3 +20,9 @@ export function getSavePublicUrl(romId) {
   const { data } = supabase.storage.from('saves').getPublicUrl(`${romId}/auto.state`)
   return data.publicUrl
 }
+
+/** URL publique du fichier battery save (.sav in-game) */
+export function getBatterySavePublicUrl(romId) {
+  const { data } = supabase.storage.from('saves').getPublicUrl(`${romId}/battery.sav`)
+  return data.publicUrl
+}
