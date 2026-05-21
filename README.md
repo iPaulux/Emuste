@@ -162,7 +162,5 @@ Bouton Save (dans EmulatorJS)
 
 ## PIN
 
-Code par défaut : **`1158`**
-
 Pour le changer : constante `PIN` dans `src/components/PinGate.jsx`.  
 Le PIN est vérifié côté client et mémorisé en `sessionStorage` (reset à la fermeture de l'onglet).
