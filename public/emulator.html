@@ -159,12 +159,15 @@
       window.EJS_onSaveState = function(e) {
         try {
           const raw = e.state instanceof Uint8Array ? e.state : new Uint8Array(e.state);
-          cachedState = raw;
+          cachedState = raw.slice(); // copie locale pour le Load dans la session
+
+          // Transfère l'ArrayBuffer en zéro-copie vers le parent (pas de sérialisation JSON)
+          const transfer = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
           window.parent.postMessage({
-            type: 'ejs_save_state',
-            state: Array.from(raw),
+            type:       'ejs_save_state',
+            state:      transfer,
             screenshot: e.screenshot || null,
-          }, '*');
+          }, '*', [transfer]); // [transfer] = Transferable, zéro-copie
         } catch (err) { console.error('[Emuste] save error:', err); }
       };
 

@@ -31,11 +31,12 @@ export default function Emulator({ rom, onBack }) {
   })()
 
   // ── Upload du save state vers Supabase ──────────────────────────────
-  const uploadSave = useCallback(async (stateArray, screenshot) => {
+  const uploadSave = useCallback(async (stateBuffer, screenshot) => {
     setSaveStatus('saving')
     try {
       const filePath = `${rom.id}/auto.state`
-      const blob     = new Blob([new Uint8Array(stateArray)], { type: 'application/octet-stream' })
+      // stateBuffer est un ArrayBuffer transféré depuis l'iframe (zéro-copie)
+      const blob     = new Blob([stateBuffer], { type: 'application/octet-stream' })
 
       const { error: upErr } = await supabase.storage
         .from('saves')
