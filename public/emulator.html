@@ -258,8 +258,9 @@
         saveSavFiles: true, loadSavFiles: true,
       };
 
-      elog('EJS config — saveUrl=' + (saveUrl ? 'yes' : 'no') + ' batterySaveUrl=' + (batterySaveUrl ? 'yes' : 'no'));
-      if (saveUrl) window.EJS_saveStateURL = saveUrl;
+      elog('EJS config — saveUrl=' + (saveUrl ? 'yes(skipped-auto)' : 'no') + ' batterySaveUrl=' + (batterySaveUrl ? 'yes' : 'no'));
+      // EJS_saveStateURL supprimé : auto-load WASM crash si save corrompu.
+      // Le save se charge manuellement via EJS_onLoadState (bouton Load State).
 
       // Save STATE (snapshot) → upload cloud via parent
       window.EJS_onSaveState = function(e) {
