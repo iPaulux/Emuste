@@ -42,19 +42,27 @@
   <div id="game"></div>
 
   <script>
-    // ── Relais erreurs iframe → parent console ─────────────────────────
-    window.onerror = function(msg, src, line, col, err) {
-      window.parent?.postMessage({ type: 'ejs_debug', level: 'error', msg: String(msg), src, line }, '*');
+    // ── Logger persistant (survit aux reloads) ─────────────────────────
+    function elog(msg) {
+      const key = 'emuste_log';
+      try {
+        const arr = JSON.parse(localStorage.getItem(key) || '[]');
+        arr.push('[' + new Date().toISOString().slice(11,23) + '] ' + msg);
+        if (arr.length > 40) arr.splice(0, arr.length - 40);
+        localStorage.setItem(key, JSON.stringify(arr));
+      } catch(e) {}
+      window.parent?.postMessage({ type: 'ejs_debug', level: 'log', msg }, '*');
+    }
+    window.onerror = function(msg, src, line) {
+      elog('ERROR ' + msg + ' @ ' + src + ':' + line);
       return false;
     };
     window.addEventListener('unhandledrejection', function(e) {
-      window.parent?.postMessage({ type: 'ejs_debug', level: 'error', msg: 'Unhandled rejection: ' + String(e.reason) }, '*');
+      elog('UNHANDLED REJECTION: ' + String(e.reason));
     });
-    // Intercepte les tentatives de reload de l'iframe
     const _origReload = window.location.reload.bind(window.location);
     window.location.reload = function() {
-      window.parent?.postMessage({ type: 'ejs_debug', level: 'warn', msg: 'RELOAD INTERCEPTED in iframe' }, '*');
-      console.warn('[Emuste] Reload intercepted — stack:', new Error().stack);
+      elog('RELOAD CALLED — stack: ' + new Error().stack?.split('\n')[1]);
       _origReload();
     };
 
@@ -207,12 +215,14 @@
 
     // ── Point d'entrée ─────────────────────────────────────────────────
     async function init() {
+      elog('init() start — romId=' + romId + ' chunks=' + chunkCount);
       if (!romUrl && (!romId || !sbUrl)) { showError('Aucune ROM spécifiée.'); return; }
 
       // 1. Téléchargement des chunks ROM
       let gameUrl;
       if (chunkCount <= 1) {
         gameUrl = romUrl;
+        elog('ROM url directe');
       } else {
         preloadTitle.textContent = 'Téléchargement de la ROM…';
         setProgress(0, chunkCount);
@@ -220,12 +230,15 @@
           const buffers = await downloadChunks(chunkCount);
           const blob = new Blob(buffers, { type: 'application/octet-stream' });
           gameUrl = URL.createObjectURL(blob);
+          elog('ROM chunks assemblés OK — ' + buffers.length + ' blocs');
         } catch (err) { showError('Erreur : ' + err.message); return; }
       }
 
       // 2. Injection du battery save cloud dans l'IDB (avant le boot EmulatorJS)
       setStep('Chargement de la sauvegarde…');
+      elog('injectBatterySave start');
       await injectBatterySave();
+      elog('injectBatterySave done');
 
       preload.classList.add('hidden');
 
@@ -245,6 +258,7 @@
         saveSavFiles: true, loadSavFiles: true,
       };
 
+      elog('EJS config — saveUrl=' + (saveUrl ? 'yes' : 'no') + ' batterySaveUrl=' + (batterySaveUrl ? 'yes' : 'no'));
       if (saveUrl) window.EJS_saveStateURL = saveUrl;
 
       // Save STATE (snapshot) → upload cloud via parent
@@ -282,8 +296,9 @@
         }
       });
 
+      elog('EmulatorJS script loading…');
+
       // ── Sync battery save automatique ────────────────────────────
-      // Sync initial (au démarrage, pour capter les saves déjà en IDB)
       setTimeout(syncBatteryToCloud, 5000);
       // Sync toutes les 60 secondes pendant la session
       setInterval(syncBatteryToCloud, 60 * 1000);
