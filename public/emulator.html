@@ -121,7 +121,7 @@
 
         const baseName = romFileName.replace(/\.nds$/i, '');
         const savPath  = `/data/saves/${baseName}.sav`;
-        const now      = new Date().toISOString();
+        const now      = new Date();
 
         const db = await openSavesDB();
         await new Promise((resolve, reject) => {
