@@ -22,6 +22,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,wasm}'],
+        // L'iframe emulator.html?params ne doit JAMAIS recevoir index.html
+        // via le fallback SPA du service worker (sinon l'app se charge dans l'iframe)
+        navigateFallbackDenylist: [/emulator\.html/],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         runtimeCaching: [
           {
