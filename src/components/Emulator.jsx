@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { supabase, getRomPublicUrl, getSavePublicUrl, getBatterySavePublicUrl } from '../lib/supabase.js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -17,7 +17,9 @@ export default function Emulator({ rom, onBack }) {
   const iframeRef = useRef(null)
 
   // ── Construction de l'URL de l'iframe ───────────────────────────────
-  const iframeSrc = (() => {
+  // useMemo obligatoire : si l'URL change entre deux renders (Date.now()),
+  // React recharge l'iframe → le jeu redémarre en boucle à chaque sync.
+  const iframeSrc = useMemo(() => {
     const url = new URL('/emulator.html', window.location.origin)
     url.searchParams.set('romId',       rom.id)
     url.searchParams.set('romFileName', rom.file_name)
@@ -31,7 +33,7 @@ export default function Emulator({ rom, onBack }) {
       url.searchParams.set('save', `${getSavePublicUrl(rom.id)}?t=${Date.now()}`)
     }
     return url.toString()
-  })()
+  }, [rom])
 
   // ── Upload save state (snapshot) ────────────────────────────────────
   const uploadSave = useCallback(async (stateBuffer, screenshot) => {
