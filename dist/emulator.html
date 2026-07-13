@@ -42,6 +42,22 @@
   <div id="game"></div>
 
   <script>
+    // ── Relais erreurs iframe → parent console ─────────────────────────
+    window.onerror = function(msg, src, line, col, err) {
+      window.parent?.postMessage({ type: 'ejs_debug', level: 'error', msg: String(msg), src, line }, '*');
+      return false;
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+      window.parent?.postMessage({ type: 'ejs_debug', level: 'error', msg: 'Unhandled rejection: ' + String(e.reason) }, '*');
+    });
+    // Intercepte les tentatives de reload de l'iframe
+    const _origReload = window.location.reload.bind(window.location);
+    window.location.reload = function() {
+      window.parent?.postMessage({ type: 'ejs_debug', level: 'warn', msg: 'RELOAD INTERCEPTED in iframe' }, '*');
+      console.warn('[Emuste] Reload intercepted — stack:', new Error().stack);
+      _origReload();
+    };
+
     const params       = new URLSearchParams(window.location.search);
     const romUrl       = params.get('rom');
     const saveUrl      = params.get('save');

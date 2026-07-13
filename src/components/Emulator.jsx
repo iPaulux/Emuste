@@ -86,6 +86,9 @@ export default function Emulator({ rom, onBack }) {
       if (event.data?.type === 'ejs_battery_save' && event.data.data) {
         uploadBatterySave(event.data.data)
       }
+      if (event.data?.type === 'ejs_debug') {
+        console[event.data.level || 'log']('[iframe]', event.data.msg, event.data.src ? `${event.data.src}:${event.data.line}` : '')
+      }
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
