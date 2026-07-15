@@ -301,8 +301,12 @@
 
       // ── Sync battery save automatique ────────────────────────────
       setTimeout(syncBatteryToCloud, 5000);
-      // Sync toutes les 60 secondes pendant la session
-      setInterval(syncBatteryToCloud, 60 * 1000);
+      // Sync toutes les 30 secondes pendant la session
+      setInterval(syncBatteryToCloud, 30 * 1000);
+      // Sync quand l'onglet passe en arrière-plan (signal fiable)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') syncBatteryToCloud();
+      });
       // Sync au déchargement de la page (best-effort)
       window.addEventListener('pagehide', syncBatteryToCloud);
 

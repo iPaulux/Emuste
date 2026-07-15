@@ -3,6 +3,19 @@ import { supabase, getRomPublicUrl, getSavePublicUrl, getBatterySavePublicUrl } 
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
+const MAX_BACKUPS = 6   // nombre de sessions conservées en historique
+
+/** Proportion d'octets « réels » (ni 0x00 ni 0xFF) — détecte une save vierge */
+function realDataRatio(buffer) {
+  const view = new Uint8Array(buffer)
+  if (view.length === 0) return 0
+  let blank = 0
+  for (let i = 0; i < view.length; i++) {
+    if (view[i] === 0x00 || view[i] === 0xff) blank++
+  }
+  return (view.length - blank) / view.length
+}
+
 const STATUS = {
   idle:        null,
   saving:      { label: '☁ Sync état…',       cls: 'text-yellow-400' },
@@ -64,6 +77,12 @@ export default function Emulator({ rom, onBack }) {
 
   // ── Upload battery save (.sav in-game) ──────────────────────────────
   const uploadBatterySave = useCallback(async (buffer) => {
+    // Garde-fou : ne JAMAIS écraser la save cloud avec une save quasi vide.
+    // Une save Pokémon réelle contient > 5 % de données ; une vierge ~0 %.
+    if (realDataRatio(buffer) < 0.02) {
+      console.warn('[Emuste] Save quasi vide ignorée (protection anti-écrasement)')
+      return
+    }
     try {
       setSaveStatus('savingBat')
       const blob = new Blob([buffer], { type: 'application/octet-stream' })
@@ -77,6 +96,40 @@ export default function Emulator({ rom, onBack }) {
     } finally {
       setTimeout(() => setSaveStatus('idle'), 2000)
     }
+  }, [rom.id])
+
+  // ── Backup de la save cloud au lancement (avant toute sync) ─────────
+  // Copie la battery.sav actuelle dans backups/ AVANT qu'une sync puisse
+  // l'écraser. Garantit qu'on peut toujours revenir à la session précédente.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: current, error: dlErr } = await supabase.storage
+          .from('saves').download(`${rom.id}/battery.sav`)
+        if (dlErr || !current || cancelled) return
+        const buf = await current.arrayBuffer()
+        if (realDataRatio(buf) < 0.02) return // rien de bon à sauvegarder
+
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+        await supabase.storage
+          .from('saves')
+          .upload(`${rom.id}/backups/battery_${stamp}.sav`, new Blob([buf]), { upsert: true })
+
+        // Purge : ne garder que les MAX_BACKUPS plus récents
+        const { data: list } = await supabase.storage
+          .from('saves').list(`${rom.id}/backups`, { sortBy: { column: 'name', order: 'desc' } })
+        if (list && list.length > MAX_BACKUPS) {
+          const toDelete = list.slice(MAX_BACKUPS)
+            .map(f => `${rom.id}/backups/${f.name}`)
+          await supabase.storage.from('saves').remove(toDelete)
+        }
+        console.log('[Emuste] Backup save cloud créé :', `backups/battery_${stamp}.sav`)
+      } catch (err) {
+        console.warn('[Emuste] backup au lancement échoué:', err)
+      }
+    })()
+    return () => { cancelled = true }
   }, [rom.id])
 
   // ── Écoute des messages de l'iframe ─────────────────────────────────
