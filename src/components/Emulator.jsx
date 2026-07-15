@@ -18,11 +18,14 @@ function realDataRatio(buffer) {
 
 const STATUS = {
   idle:        null,
-  saving:      { label: '☁ Sync état…',       cls: 'text-yellow-400' },
-  saved:       { label: '✓ État sauvegardé',   cls: 'text-green-400'  },
-  savingBat:   { label: '💾 Sync .sav…',       cls: 'text-blue-400'   },
-  savedBat:    { label: '✓ .sav synchronisé',  cls: 'text-green-400'  },
-  error:       { label: '✗ Erreur sauvegarde', cls: 'text-red-400'    },
+  saving:      { label: '☁ Sync état…',        cls: 'text-yellow-400' },
+  saved:       { label: '✓ État sauvegardé',    cls: 'text-green-400'  },
+  savingBat:   { label: '💾 Sync .sav…',        cls: 'text-blue-400'   },
+  savedBat:    { label: '✓ .sav synchronisé',   cls: 'text-green-400'  },
+  loadingCloud:{ label: '☁ Chargement partie…', cls: 'text-yellow-400' },
+  cloudLoaded: { label: '✓ Partie cloud chargée',cls: 'text-green-400'  },
+  cloudErr:    { label: '✗ Aucune partie cloud', cls: 'text-red-400'    },
+  error:       { label: '✗ Erreur sauvegarde',  cls: 'text-red-400'    },
 }
 
 export default function Emulator({ rom, onBack }) {
@@ -132,6 +135,13 @@ export default function Emulator({ rom, onBack }) {
     return () => { cancelled = true }
   }, [rom.id])
 
+  // ── Charge le save state cloud dans le jeu en cours ─────────────────
+  const loadCloudState = useCallback(() => {
+    if (!window.confirm('Charger ta sauvegarde cloud ? La partie affichée sera remplacée par ta dernière progression synchronisée.')) return
+    setSaveStatus('loadingCloud')
+    iframeRef.current?.contentWindow?.postMessage({ type: 'load_cloud_state' }, '*')
+  }, [])
+
   // ── Écoute des messages de l'iframe ─────────────────────────────────
   useEffect(() => {
     const handler = (event) => {
@@ -140,6 +150,10 @@ export default function Emulator({ rom, onBack }) {
       }
       if (event.data?.type === 'ejs_battery_save' && event.data.data) {
         uploadBatterySave(event.data.data)
+      }
+      if (event.data?.type === 'cloud_state_result') {
+        setSaveStatus(event.data.ok ? 'cloudLoaded' : 'cloudErr')
+        setTimeout(() => setSaveStatus('idle'), 3000)
       }
       if (event.data?.type === 'ejs_debug') {
         console[event.data.level || 'log']('[iframe]', event.data.msg, event.data.src ? `${event.data.src}:${event.data.line}` : '')
@@ -171,18 +185,30 @@ export default function Emulator({ rom, onBack }) {
           <span className="hidden sm:inline">Bibliothèque</span>
         </button>
 
-        <span className="text-zinc-200 font-medium text-sm truncate max-w-[40vw] text-center">
+        <span className="text-zinc-200 font-medium text-sm truncate max-w-[30vw] text-center">
           {rom.name}
         </span>
 
-        <div className="w-44 flex justify-end">
-          {status ? (
-            <span className={`text-xs font-medium ${status.cls}`}>{status.label}</span>
-          ) : (
-            <span className="text-zinc-600 text-xs">
-              {rom.save ? '☁ Cloud save actif' : 'Aucune sauvegarde'}
-            </span>
+        <div className="flex items-center gap-3 justify-end">
+          {rom.save && (
+            <button
+              onClick={loadCloudState}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-600/20 text-violet-300 hover:bg-violet-600/30 transition-colors text-xs font-medium border border-violet-500/30"
+              title="Recharger ta dernière progression synchronisée dans le cloud"
+            >
+              <span>☁</span>
+              <span className="hidden sm:inline">Charger partie cloud</span>
+            </button>
           )}
+          <div className="w-36 flex justify-end">
+            {status ? (
+              <span className={`text-xs font-medium ${status.cls}`}>{status.label}</span>
+            ) : (
+              <span className="text-zinc-600 text-xs">
+                {rom.save ? '☁ Cloud save actif' : 'Aucune sauvegarde'}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

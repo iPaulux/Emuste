@@ -294,10 +294,28 @@
         } catch { return null; }
       };
 
-      window.addEventListener('message', ev => {
+      window.addEventListener('message', async ev => {
         if (ev.data?.type === 'ejs_force_load' && window.EJS_emulator && ev.data.state) {
           try { window.EJS_emulator.gameManager.loadState(new Uint8Array(ev.data.state)); }
           catch (err) { console.error('[Emuste] force_load error:', err); }
+        }
+        // Charge le save state cloud (auto.state) directement dans le cœur
+        if (ev.data?.type === 'load_cloud_state') {
+          try {
+            if (!window.EJS_emulator?.gameManager) { elog('load_cloud_state: EJS pas prêt'); return; }
+            const resp = await fetch(
+              `${sbUrl}/storage/v1/object/public/saves/${romId}/auto.state?t=${Date.now()}`,
+              { cache: 'no-store' }
+            );
+            if (!resp.ok) { window.parent?.postMessage({ type: 'cloud_state_result', ok: false }, '*'); return; }
+            const buf = new Uint8Array(await resp.arrayBuffer());
+            window.EJS_emulator.gameManager.loadState(buf);
+            elog('cloud state chargé: ' + buf.length + ' bytes');
+            window.parent?.postMessage({ type: 'cloud_state_result', ok: true }, '*');
+          } catch (err) {
+            elog('load_cloud_state err: ' + err);
+            window.parent?.postMessage({ type: 'cloud_state_result', ok: false }, '*');
+          }
         }
       });
 
