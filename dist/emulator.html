@@ -143,15 +143,17 @@
         const data = new Uint8Array(await resp.arrayBuffer());
         if (data.length < 100) return; // sanity check
 
-        const baseName = romFileName.replace(/\.nds$/i, '');
-        const savPath  = `/data/saves/${baseName}.sav`;
-        const now      = new Date();
+        // Chemin CANONIQUE que melonDS lit réellement au boot.
+        const savPath = '/data/saves/melonDS/game.sav';
+        const now     = new Date();
 
         const db = await openSavesDB();
         await new Promise((resolve, reject) => {
           const tx    = db.transaction('FILE_DATA', 'readwrite');
           const store = tx.objectStore('FILE_DATA');
-          store.put({ timestamp: now, mode: 16872 }, '/data/saves/');
+          // Les deux répertoires doivent exister (mode dossier 040755 = 16877)
+          store.put({ timestamp: now, mode: 16877 }, '/data/saves/');
+          store.put({ timestamp: now, mode: 16877 }, '/data/saves/melonDS');
           store.put({ timestamp: now, mode: 33206, contents: data }, savPath);
           tx.oncomplete = resolve;
           tx.onerror    = () => reject(tx.error);
@@ -178,17 +180,19 @@
           cursor.onerror = () => reject(cursor.error);
         });
 
-        // Cherche le fichier .sav avec de vraies données (> 100 bytes)
-        const savEntry = entries.find(e => {
-          if (typeof e.key !== 'string' || !e.key.endsWith('.sav')) return false;
+        const hasData = e => {
           const c = e.value?.contents;
           if (!c) return false;
           const len = c instanceof Uint8Array
             ? c.length
             : Object.keys(c).filter(k => !isNaN(k)).length;
-          // Exclut le contenu "undefined" (9 bytes)
-          return len > 100;
-        });
+          return len > 100; // exclut le contenu "undefined" (9 bytes)
+        };
+
+        // Priorité au chemin canonique melonDS ; sinon n'importe quelle .sav valide
+        const savEntry =
+          entries.find(e => e.key === '/data/saves/melonDS/game.sav' && hasData(e)) ||
+          entries.find(e => typeof e.key === 'string' && e.key.endsWith('.sav') && hasData(e));
 
         if (!savEntry) return;
 
